@@ -1,0 +1,198 @@
+# Loading and preprocessing the data
+## Load the data
+```{r}
+data <- read.csv("activity.csv")
+```
+
+## Preprocessing the data
+Let's take a look at the data
+```{r}
+str(data)
+```
+steps and interval are 'int' but date is a Factor.  I will need to cast that to 
+a Date since I need to answer questions that require it
+```{r}
+data$date<- as.Date(data$date,format="%Y-%m-%d")
+```
+
+Look at the data one more time
+```{r}
+str(data)
+```
+date is now a Date class.
+
+<br>
+
+# What is mean total number of steps taken per day?
+Calculate the total number of steps taken per day  
+I will use xtabs to sum the steps per day and then convert it to a table.  I 
+will also change the second column name to Total.Steps
+```{r}
+totalStepsPerDay <-xtabs(steps~date,data)
+totalStepsPerDay <- as.data.frame(totalStepsPerDay)
+colnames(totalStepsPerDay)[2]<-"Total.Steps"
+```
+
+Make a histogram of the total number of steps taken each day
+```{r}
+ hist(totalStepsPerDay$Total.Steps,xlab = "Total Steps Per Day", main = "Histogram of Total Steps Per Day")
+```
+
+Calculate and report the mean and median of the total number of steps taken per 
+day I am using floor to round down the number and I am casting to an integer to
+dispaly it in line later.  If I don't cast it to an integer it will show with
+scientific notation inline
+```{r}
+datamean <-as.integer(floor(mean(totalStepsPerDay$Total.Steps)))
+datamedian <-median(totalStepsPerDay$Total.Steps)
+```
+The mean is `r datamean` steps per day and the median is `r datamedian` steps
+
+
+# What is the average daily activity pattern?
+Calculate the average number of steps taken, averaged across all days.    
+Change the second column name to Average.Steps.
+Cast interval to integer
+```{r}
+avgSteps <-xtabs(steps~interval,aggregate(steps~interval,data,mean))
+avgSteps <- as.data.frame(avgSteps)
+colnames(avgSteps)[2]<-"Average.Steps"
+avgStepsPerInterval <- avgSteps
+avgStepsPerInterval$interval<- as.integer(avgStepsPerInterval$interval)
+```
+
+Now plot the time series
+```{r}
+plot(avgStepsPerInterval$interval,avgStepsPerInterval$Average.Steps,type='l', 
+     xlab='Interval',ylab='Average Steps', main='Average Daily Activity Pattern')
+```
+
+## Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps
+```{r}
+whichmax<- which.max(avgStepsPerInterval$Average.Steps)
+whichmax
+```
+The `r whichmax` interval has the max number of steps which corresponds to 
+`r sprintf("%.02d:%.02d", (whichmax * 5) %/% 60, round((whichmax * 5) %% 60))` 
+
+# Imputing missing values
+Calculate and report the total number of missing values in the dataset (i.e. the 
+total number of rows with NAs)
+```{r}
+sum(is.na(data$steps))
+```
+That represents `r round(mean(is.na(data$steps))*100,2)`% of the total number of records
+
+Strategy for filling in all of the missing values in the dataset:  
+I will replace NA data in steps with the average steps for that interval.  First, 
+I will merge data from the average steps per interval table 
+```{r}
+mergeddata <-merge(data, avgStepsPerInterval, by = "interval", all.x = TRUE)
+```
+
+Then I replace all NA values with the corresponding average steps for that interval
+```{r}
+mergeddata$steps[is.na(mergeddata$steps)] <-mergeddata$Average.Steps[is.na(mergeddata$steps)]
+```
+
+My new dataset with the missing data filled.  I will need the dplyr package to 
+select only the columns that I need
+```{r results="hide",message=FALSE}
+require(dplyr)
+nomissingdata <- select(mergeddata,"interval","steps","date")
+```
+
+Histogram of the total number of steps taken each day
+```{r}
+totalStepsPerDayAllData <-xtabs(steps~date,nomissingdata)
+totalStepsPerDayAllData <- as.data.frame(totalStepsPerDayAllData)
+colnames(totalStepsPerDayAllData)[2]<-"Total.Steps"
+```
+
+Make a histogram of the total number of steps taken each day
+```{r}
+ hist(totalStepsPerDayAllData$Total.Steps,xlab = "Total Steps Per Day", main = 
+              "Histogram of Total Steps Per Day All Data Filled")
+```
+
+Calculate and report mean and median
+```{r}
+datameanAllData <-as.integer(floor(mean(totalStepsPerDayAllData$Total.Steps)))
+datamedianAllData <-as.integer(median(totalStepsPerDayAllData$Total.Steps))
+```
+The new mean is `r datameanAllData` steps per day and the new median is `r datamedianAllData` steps
+
+<br/>
+Both mean and median dropped due to filling missing data.
+
+<style>
+table, th, td {
+    border: 1px solid black;
+    border-collapse: collapse;
+}
+th, td {
+    padding: 15px;
+}
+</style>
+<table>
+<tr><th></th><th>With NA data</th><th>All Data Filled In</th></tr>
+<tr><td>mean</td><td>`r datamean`</td><td>`r datameanAllData`</td></tr>
+<tr><td>median</td><td>`r datamedian`</td><td>`r datamedianAllData`</td></tr>
+</table>
+
+
+And from comparing the two histograms, it looks like we filled missing data for 
+eight days in the range of 0-5000 steps. 
+```{r}
+par(mfrow=c(1,2))
+hist(totalStepsPerDay$Total.Steps,xlab = "Total Steps Per Day", main = "With NA data")
+hist(totalStepsPerDayAllData$Total.Steps,xlab = "Total Steps Per Day", main = "With Data Filled")
+```
+
+
+## Are there differences in activity patterns between weekdays and weekends?
+First, I will split the data into two groups: weekdays and weekends.  I am assuming
+that the weekend includes Saturday and Sunday.
+
+I will use the lubridate package to manage dates
+
+```{r results="hide",message=FALSE}
+require(lubridate)
+weekdaysActivities <- filter(data,wday(data$date) %in% c(2:6))  # c(2:6) => Monday through Friday
+weekendsActivities <- filter(data,wday(data$date) %in% c(1,7)) # c(1,7) => Sunday and Saturday
+```
+
+Calculate the average number of steps taken, averaged across all days.    
+Change the second column name to Average.Steps.
+Cast interval to integer
+```{r}
+## Weekdays
+avgStepsWeekdays <-xtabs(steps~interval,aggregate(steps~interval,weekdaysActivities,mean))
+avgStepsWeekdays <- as.data.frame(avgStepsWeekdays)
+colnames(avgStepsWeekdays)[2]<-"Average.Steps"
+avgStepsPerIntervalWeekdays <- avgStepsWeekdays
+avgStepsPerIntervalWeekdays$interval<- as.integer(avgStepsPerIntervalWeekdays$interval)
+
+## Weekends
+avgStepsWeekends <-xtabs(steps~interval,aggregate(steps~interval,weekendsActivities,mean))
+avgStepsWeekends <- as.data.frame(avgStepsWeekends)
+colnames(avgStepsWeekends)[2]<-"Average.Steps"
+avgStepsPerIntervalWeekends <- avgStepsWeekends
+avgStepsPerIntervalWeekends$interval<- as.integer(avgStepsPerIntervalWeekends$interval)
+```
+
+Now plot the time series
+```{r}
+plot(avgStepsPerIntervalWeekdays$interval,avgStepsPerIntervalWeekdays$Average.Steps,type='l', 
+     xlab='Interval',ylab='Average Steps', main='Average Daily Activity Pattern', col='blue')
+
+points(avgStepsPerIntervalWeekends$interval,avgStepsPerIntervalWeekends$Average.Steps,type='l', 
+     xlab='Interval',ylab='Average Steps', main='Average Daily Activity Pattern',col='red')
+
+legend("topright",c("Weekdays","Weekends"),lty=c(1,1),lwd=c(2.5,2.5),col=c("blue","red"))
+ 
+```
+
+Two things that pop out in comparing weekdays to weekends activities:  
+1. There is more activity over the weekend than during week days 
+2. Activities start earlier during week days than over the weekend
